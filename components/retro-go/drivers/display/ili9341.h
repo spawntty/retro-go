@@ -117,6 +117,7 @@ static void spi_init(void)
         .queue_size = SPI_TRANSACTION_COUNT, // We want to be able to queue 5 transactions at a time
         .pre_cb = &spi_pre_transfer_cb,      // Specify pre-transfer callback to handle D/C line and SPI lock
         .flags = SPI_DEVICE_NO_DUMMY,        // SPI_DEVICE_HALFDUPLEX;
+        .clock_source = SPI_CLK_SRC_SPLL,
     };
 
     esp_err_t ret;

@@ -13,7 +13,6 @@ rg_setup_compile_options(
     -Wno-format-overflow
     -Wno-char-subscripts
     -Wno-missing-field-initializers
-    -mfix-esp32-psram-cache-issue
     -DHAVE_CONFIG_H
     -O2
 )

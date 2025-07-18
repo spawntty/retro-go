@@ -13,8 +13,6 @@ CEEPROM::CEEPROM(UBYTE typ)
    *filename=0;
    memset(romdata, 0xff, sizeof(romdata));
    Reset();
-
-   SetEEPROMType(type);
 }
 
 void CEEPROM::Reset(void)
