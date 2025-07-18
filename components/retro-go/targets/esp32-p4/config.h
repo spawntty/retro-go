@@ -7,7 +7,7 @@
 // Storage
 #define RG_STORAGE_ROOT             "/sd"
 #define RG_STORAGE_SDMMC_HOST       1
-#define RG_STORAGE_SDMMC_SPEED      SDMMC_FREQ_DEFAULT
+#define RG_STORAGE_SDMMC_SPEED      SDMMC_FREQ_HIGHSPEED
 
 // Audio
 #define RG_AUDIO_USE_INT_DAC        0   // 0 = Disable, 1 = GPIO25, 2 = GPIO26, 3 = Both
@@ -62,19 +62,24 @@ ILI9341_CMD(0xE1, 0xD0, 0x00, 0x02, 0x07, 0x0a, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x
 #define RG_RECOVERY_BTN RG_KEY_MENU // Keep this button pressed to open the recovery menu
 
 // SPI Display
-#define RG_GPIO_LCD_MISO            GPIO_NUM_NC
-#define RG_GPIO_LCD_MOSI            GPIO_NUM_22
-#define RG_GPIO_LCD_CLK             GPIO_NUM_23
-#define RG_GPIO_LCD_CS              GPIO_NUM_24
-#define RG_GPIO_LCD_DC              GPIO_NUM_25
-#define RG_GPIO_LCD_RST             GPIO_NUM_26
-#define RG_GPIO_LCD_BCKL            GPIO_NUM_27
+#define RG_GPIO_LCD_MISO    GPIO_NUM_NC
+#define RG_GPIO_LCD_MOSI    GPIO_NUM_22
+#define RG_GPIO_LCD_CLK     GPIO_NUM_23
+#define RG_GPIO_LCD_CS      GPIO_NUM_24
+#define RG_GPIO_LCD_DC      GPIO_NUM_25
+#define RG_GPIO_LCD_RST     GPIO_NUM_26
+#define RG_GPIO_LCD_BCKL    GPIO_NUM_27
 
-// SPI SD Card
+// SDMMC SD Card
 /*
-#define RG_GPIO_SDSPI_CLK           GPIO_NUM_43
-#define RG_GPIO_SDSPI_CMD           GPIO_NUM_44
-#define RG_GPIO_SDSPI_D0            GPIO_NUM_39
+We use the default pins for SDMMC on the ESP32-P4 ie:
+CLK	 GPIO_NUM_43
+CMD	 GPIO_NUM_44
+D0	 GPIO_NUM_39
+D1	 GPIO_NUM_40
+D2	 GPIO_NUM_41
+D3	 GPIO_NUM_42
+
 */
 
 // Updater
