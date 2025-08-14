@@ -39,19 +39,6 @@ static esp_err_t enable_dsi_phy_power(void)
     return esp_ldo_acquire_channel(&ldo_cfg, &phy_pwr_chan);
 }
 
-static inline uint16_t *lcd_take_buffer(void)
-{
-    uint16_t *buffer;
-    if (xQueueReceive(lcd_buffers, &buffer, pdMS_TO_TICKS(2500)) != pdTRUE)
-        RG_PANIC("ST7703 display");
-    return buffer;
-}
-
-static inline void lcd_give_buffer(uint16_t *buffer)
-{
-    xQueueSend(lcd_buffers, &buffer, portMAX_DELAY);
-}
-
 static void lcd_queue_draw(int x, int y, int width, int height, const uint16_t *buffer)
 {
     if (!buffer || !lcd_panel || width <= 0 || height <= 0)
@@ -81,7 +68,10 @@ static void lcd_set_window(int left, int top, int width, int height)
 
 static inline uint16_t *lcd_get_buffer(size_t length)
 {
-    return lcd_take_buffer();
+    uint16_t *buffer;
+    if (xQueueReceive(lcd_buffers, &buffer, pdMS_TO_TICKS(2500)) != pdTRUE)
+        RG_PANIC("ST7703 display");
+    return buffer;
 }
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
@@ -127,7 +117,7 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
         lcd_queue_draw(0, 0, width, height, buffer);
     }
     
-    lcd_give_buffer(buffer);
+    xQueueSend(lcd_buffers, &buffer, portMAX_DELAY);
 }
 
 static void lcd_set_backlight(float percent)
