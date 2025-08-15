@@ -18,11 +18,9 @@
 
 // Video - ST7703 MIPI-DSI Configuration
 #define RG_SCREEN_DRIVER            1   // 1 = ST7703 MIPI-DSI
-#define RG_SCREEN_SPEED             0   // Not used for MIPI-DSI
 #define RG_SCREEN_BACKLIGHT         0
 #define RG_SCREEN_WIDTH             720
 #define RG_SCREEN_HEIGHT            720
-#define RG_SCREEN_ROTATE            0
 #define RG_SCREEN_VISIBLE_AREA      {0, 0, 0, 0}  // Left, Top, Right, Bottom
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0}  // Left, Top, Right, Bottom
 
