@@ -24,7 +24,16 @@
 #define RG_SCREEN_VISIBLE_AREA      {0, 0, 0, 0}  // Left, Top, Right, Bottom
 #define RG_SCREEN_SAFE_AREA         {0, 0, 0, 0}  // Left, Top, Right, Bottom
 
-// ST7703 specific configuration using BONO config from BadgeVMS
+/*
+ * This enables a code patch that rotate the screen by 90deg to the left
+ * It's rly ugly, and it cost in performance, but I can't find any better option
+ * The correct way should be to edit SETGIP1 (0xE9) and SETGIP2 (0xEA) commands, but they are vendor specific 
+*/
+#define RG_SCREEN_ROTATE            1
+
+/*
+ * ST7703 specific configuration taken from the WHY2025 BadgeVMS (BONO)
+*/
 #define RG_SCREEN_ST7703_DPI_CONFIG() \
     { \
         .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT, \
@@ -46,7 +55,9 @@
         .flags.disable_lp = false \
     }
 
-// ST7703 initialization commands using BONO config
+/*
+ * ST7703 initialization commands taken from the WHY2025 BadgeVMS (BONO)
+*/
 #define RG_SCREEN_ST7703_INIT_CMDS() \
     { \
         {0xB9, (uint8_t[]){0xF1, 0x12, 0x83}, 3, 0}, \

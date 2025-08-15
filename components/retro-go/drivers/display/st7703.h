@@ -10,8 +10,8 @@
 #include <esp_log.h>
 #include <string.h>
 
-#if defined(RG_SCREEN_ROTATE) && RG_SCREEN_ROTATE != 0
-#error "RG_SCREEN_ROTATE doesn't do anything on this driver, you have to use the 0x36 command during init!"
+#ifndef RG_SCREEN_ROTATE
+#define RG_SCREEN_ROTATE 0
 #endif
 
 static esp_lcd_panel_handle_t lcd_panel = NULL;
@@ -82,45 +82,67 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
     if (use_framebuffer && framebuffer && length > 0) {
         // For MIPI DSI with framebuffer, copy directly and trigger refresh
-        static int current_y = 0;
-        int lines = (length + RG_SCREEN_WIDTH - 1) / RG_SCREEN_WIDTH;  // Round up
-        
-        if (current_y + lines > RG_SCREEN_HEIGHT) {
-            current_y = 0;  // Wrap around
+        static int current_y = 0; // source line index (unrotated space)
+        const int W = RG_SCREEN_WIDTH;
+        const int H = RG_SCREEN_HEIGHT;
+
+        // How many complete/partial lines are present in 'buffer'
+        int lines = (length + W - 1) / W;  // Round up
+
+        if (current_y + lines > H) {
+            // If the incoming chunk would overflow the frame, wrap (frame-based producers usually start at 0)
+            current_y = 0;
         }
-        
-        // Copy line by line to handle partial lines correctly
-        for (int line = 0; line < lines && (current_y + line) < RG_SCREEN_HEIGHT; line++) {
-            size_t line_offset = (current_y + line) * RG_SCREEN_WIDTH;
-            size_t src_offset = line * RG_SCREEN_WIDTH;
-            size_t pixels_to_copy = RG_MIN(RG_SCREEN_WIDTH, length - src_offset);
-            
+
+#if (RG_SCREEN_ROTATE == 1)
+        // 90° CCW rotation: dst(x',y') = (y, W-1-x)
+        for (int line = 0; line < lines && (current_y + line) < H; line++) {
+            const int sy = current_y + line;                  // source y (unrotated)
+            const size_t src_offset = line * W;               // start of this line in buffer
+            const size_t pixels_to_copy = RG_MIN(W, length - src_offset);
+
+            // Write each pixel of the source line into the rotated position
+            for (size_t sx = 0; sx < pixels_to_copy; sx++) {
+                const uint16_t pix = buffer[src_offset + sx];
+                const int dx = sy;                            // x' = y
+                const int dy = (W - 1) - (int)sx;             // y' = W - 1 - x
+                ((uint16_t*)framebuffer)[(size_t)dy * W + (size_t)dx] = pix;
+            }
+        }
+#else
+        // No rotation: copy line-by-line as before (handles partial last line)
+        for (int line = 0; line < lines && (current_y + line) < H; line++) {
+            const size_t line_offset = (size_t)(current_y + line) * W;
+            const size_t src_offset  = (size_t)line * W;
+            const size_t pixels_to_copy = RG_MIN(W, length - src_offset);
+
             if (src_offset < length && pixels_to_copy > 0) {
-                memcpy((uint16_t*)framebuffer + line_offset, 
-                       buffer + src_offset, 
+                memcpy((uint16_t*)framebuffer + line_offset,
+                       buffer + src_offset,
                        pixels_to_copy * sizeof(uint16_t));
             }
         }
-        
+#endif
+
         current_y += lines;
         frame_dirty_lines += lines;
-        
+
         // Trigger display refresh periodically or when enough lines accumulated
-        if (frame_dirty_lines >= 10 || current_y >= RG_SCREEN_HEIGHT) {
-            esp_lcd_panel_draw_bitmap(lcd_panel, 0, 0, RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT, framebuffer);
+        if (frame_dirty_lines >= 10 || current_y >= H) {
+            esp_lcd_panel_draw_bitmap(lcd_panel, 0, 0, W, H, framebuffer);
             frame_dirty_lines = 0;
         }
-        
+
     } else if (length > 0) {
-        // Fallback to drawing bitmap
+        // Fallback to drawing bitmap (no rotation here)
         int width = RG_MIN(RG_SCREEN_WIDTH, length);
         int height = 1;
         if (width == RG_SCREEN_WIDTH && length > RG_SCREEN_WIDTH) {
-            height = RG_MIN(length / RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT);
+            height = RG_MIN((int)(length / RG_SCREEN_WIDTH), RG_SCREEN_HEIGHT);
         }
         lcd_queue_draw(0, 0, width, height, buffer);
     }
-    
+
     xQueueSend(lcd_buffers, &buffer, portMAX_DELAY);
 }
 
