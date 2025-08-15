@@ -10,6 +10,10 @@
 #include <esp_log.h>
 #include <string.h>
 
+#if defined(RG_SCREEN_ROTATE) && RG_SCREEN_ROTATE != 0
+#error "RG_SCREEN_ROTATE doesn't do anything on this driver, you have to use the 0x36 command during init!"
+#endif
+
 static esp_lcd_panel_handle_t lcd_panel = NULL;
 static esp_lcd_panel_io_handle_t lcd_io = NULL;
 static esp_lcd_dsi_bus_handle_t dsi_bus = NULL;
