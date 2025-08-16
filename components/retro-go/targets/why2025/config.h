@@ -95,6 +95,7 @@
         {0x29, (uint8_t[]){}, 0, 50}, \
     }
 
+/*
 #define RG_GAMEPAD_GPIO_MAP {\
     {RG_KEY_LEFT,   .num = GPIO_NUM_13, .pullup = 1, .level = 0},\
     {RG_KEY_RIGHT,  .num = GPIO_NUM_14, .pullup = 1, .level = 0},\
@@ -109,6 +110,45 @@
     {RG_KEY_Y,      .num = GPIO_NUM_11, .pullup = 1, .level = 0},\
     {RG_KEY_L,      .num = GPIO_NUM_10, .pullup = 1, .level = 0},\
     {RG_KEY_R,      .num = GPIO_NUM_9,  .pullup = 1, .level = 0},\
+}
+*/
+
+// TCA8418 Keyboard Configuration
+#define RG_GAMEPAD_TCA8418_SCL_PIN      GPIO_NUM_20
+#define RG_GAMEPAD_TCA8418_SDA_PIN      GPIO_NUM_18
+#define RG_GAMEPAD_TCA8418_I2C_ADDR     TCA8418_I2C_DEFAULT_ADDRESS
+#define RG_GAMEPAD_TCA8418_NOTIFY_PIN   GPIO_NUM_NC
+#define RG_GAMEPAD_TCA8418_ROWS         TCA8418_MAX_ROW_COUNT
+#define RG_GAMEPAD_TCA8418_COLS         TCA8418_MAX_COLUMN_COUNT
+
+// TCA8418 Scancode to retro-go key mapping for WHY2025 QWERTY layout
+#define RG_GAMEPAD_TCA8418_MAP {\
+    /* Direction keys (arrow keys) */\
+    {0x33, RG_KEY_LEFT},    /* Left arrow */\
+    {0x35, RG_KEY_RIGHT},   /* Right arrow */\
+    {0x37, RG_KEY_UP},      /* Up arrow */\
+    {0x34, RG_KEY_DOWN},    /* Down arrow */\
+    \
+    /* Game buttons - using WASD + common gaming keys */\
+    {0x17, RG_KEY_UP},      /* W (alternative up) */\
+    {0x20, RG_KEY_LEFT},    /* A (alternative left) */\
+    {0x21, RG_KEY_DOWN},    /* S (alternative down) */\
+    {0x22, RG_KEY_RIGHT},   /* D (alternative right) */\
+    \
+    /* Action buttons */\
+    {0x41, RG_KEY_A},       /* Space (A button) */\
+    {0x3b, RG_KEY_B},       /* Enter (B button) */\
+    {0x29, RG_KEY_X},       /* Left Shift (X button) */\
+    {0x38, RG_KEY_Y},       /* Right Shift (Y button) */\
+    \
+    /* Shoulder buttons */\
+    {0x16, RG_KEY_L},       /* Q (Left shoulder) */\
+    {0x18, RG_KEY_R},       /* E (Right shoulder) */\
+    \
+    /* Menu buttons */\
+    {0x15, RG_KEY_SELECT},  /* Tab (Select) */\
+    {0x01, RG_KEY_START},   /* Escape (Start) */\
+    {0x1f, RG_KEY_MENU},    /* Fn (Menu) */\
 }
 
 #define RG_RECOVERY_BTN RG_KEY_MENU // Keep this button pressed to open the recovery menu

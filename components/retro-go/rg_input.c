@@ -38,6 +38,10 @@ static rg_keymap_serial_t keymap_serial[] = RG_GAMEPAD_SERIAL_MAP;
 #ifdef RG_GAMEPAD_VIRT_MAP
 static rg_keymap_virt_t keymap_virt[] = RG_GAMEPAD_VIRT_MAP;
 #endif
+#ifdef RG_GAMEPAD_TCA8418_MAP
+#include "drivers/input/tca8418.h"
+static rg_tca8418_t *tca8418_device = NULL;
+#endif
 static bool input_task_running = false;
 static uint32_t gamepad_state = -1; // _Atomic
 static uint32_t gamepad_mapped = 0;
@@ -207,6 +211,32 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
     }
 #endif
 
+#ifdef RG_GAMEPAD_TCA8418_MAP
+    //static uint32_t tca8418_state = 0;
+    if (tca8418_device)
+    {
+        rg_tca8418_event_t events[16];
+        size_t event_count = 0;
+        
+        if (rg_tca8418_read_events(tca8418_device, events, 16, &event_count))
+        {
+            for (size_t i = 0; i < event_count; i++)
+            {
+                if (events[i].mapped_key != RG_KEY_NONE)
+                {
+                    if (events[i].pressed)
+                        //tca8418_state |= events[i].mapped_key;
+                        state |= events[i].mapped_key;
+                    else
+                        //tca8418_state &= ~events[i].mapped_key;
+                        state &= ~events[i].mapped_key;
+                }
+            }
+        }
+        //state |= tca8418_state;
+    }
+#endif
+
     if (out)
         *out = state;
     return true;
@@ -334,6 +364,23 @@ void rg_input_init(void)
     UPDATE_GLOBAL_MAP(keymap_serial);
 #endif
 
+#ifdef RG_GAMEPAD_TCA8418_MAP
+    RG_LOGI("Initializing TCA8418 keyboard driver...");
+    tca8418_device = rg_tca8418_init(
+        RG_GAMEPAD_TCA8418_SCL_PIN,
+        RG_GAMEPAD_TCA8418_SDA_PIN,
+        RG_GAMEPAD_TCA8418_I2C_ADDR,
+        RG_GAMEPAD_TCA8418_NOTIFY_PIN,
+        RG_GAMEPAD_TCA8418_ROWS,
+        RG_GAMEPAD_TCA8418_COLS
+    );
+    if (tca8418_device) {
+        RG_LOGI("TCA8418 keyboard driver initialized successfully");
+        gamepad_mapped |= RG_KEY_ALL; // Mark all keys as potentially mapped
+    } else {
+        RG_LOGE("Failed to initialize TCA8418 keyboard driver");
+    }
+#endif
 
 #if RG_BATTERY_DRIVER == 1 /* ADC */
     RG_LOGI("Initializing ADC battery driver...");
@@ -369,6 +416,12 @@ void rg_input_deinit(void)
     input_task_running = false;
     // while (gamepad_state != -1)
     //     rg_task_yield();
+#ifdef RG_GAMEPAD_TCA8418_MAP
+    if (tca8418_device) {
+        rg_tca8418_deinit(tca8418_device);
+        tca8418_device = NULL;
+    }
+#endif
     RG_LOGI("Input terminated.\n");
 }
 
