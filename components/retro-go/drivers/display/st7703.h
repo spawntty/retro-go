@@ -95,18 +95,41 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
         }
 
 #if (RG_SCREEN_ROTATE == 1)
-        // 90° CCW rotation: dst(x',y') = (y, W-1-x)
+        // Optimized 90° CCW rotation with better cache locality
+        uint16_t* fb = (uint16_t*)framebuffer;
+        
         for (int line = 0; line < lines && (current_y + line) < H; line++) {
-            const int sy = current_y + line;                  // source y (unrotated)
-            const size_t src_offset = line * W;               // start of this line in buffer
+            const int sy = current_y + line;
+            const size_t src_offset = line * W;
             const size_t pixels_to_copy = RG_MIN(W, length - src_offset);
-
-            // Write each pixel of the source line into the rotated position
-            for (size_t sx = 0; sx < pixels_to_copy; sx++) {
-                const uint16_t pix = buffer[src_offset + sx];
-                const int dx = sy;                            // x' = y
-                const int dy = (W - 1) - (int)sx;             // y' = W - 1 - x
-                ((uint16_t*)framebuffer)[(size_t)dy * W + (size_t)dx] = pix;
+            const uint16_t* src_line = buffer + src_offset;
+            
+            // Pre-calculate base destination column (dx = sy)
+            const int dx = sy;
+            
+            // Process pixels in blocks for better cache performance
+            const size_t block_size = 8;
+            size_t sx;
+            
+            // Process full blocks
+            for (sx = 0; sx + block_size <= pixels_to_copy; sx += block_size) {
+                const int dy_base = (W - 1) - (int)sx;
+                
+                // Unroll inner loop for better performance
+                fb[(size_t)(dy_base - 0) * W + dx] = src_line[sx + 0];
+                fb[(size_t)(dy_base - 1) * W + dx] = src_line[sx + 1];
+                fb[(size_t)(dy_base - 2) * W + dx] = src_line[sx + 2];
+                fb[(size_t)(dy_base - 3) * W + dx] = src_line[sx + 3];
+                fb[(size_t)(dy_base - 4) * W + dx] = src_line[sx + 4];
+                fb[(size_t)(dy_base - 5) * W + dx] = src_line[sx + 5];
+                fb[(size_t)(dy_base - 6) * W + dx] = src_line[sx + 6];
+                fb[(size_t)(dy_base - 7) * W + dx] = src_line[sx + 7];
+            }
+            
+            // Handle remaining pixels
+            for (; sx < pixels_to_copy; sx++) {
+                const int dy = (W - 1) - (int)sx;
+                fb[(size_t)dy * W + dx] = src_line[sx];
             }
         }
 #else
