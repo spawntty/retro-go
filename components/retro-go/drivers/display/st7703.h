@@ -295,19 +295,6 @@ static void lcd_init(void)
         
         // Clear framebuffer to black
         memset(framebuffer, 0, RG_SCREEN_WIDTH * RG_SCREEN_HEIGHT * sizeof(uint16_t));
-        
-        // Test pattern: Fill with red for 1 second to verify framebuffer works
-        uint16_t red = 0x001F;  // RGB565 red (note: BGR order for WHY2025)
-        for (int i = 0; i < 100; i++) {  // Fill first 100 lines with red
-            for (int j = 0; j < RG_SCREEN_WIDTH; j++) {
-                ((uint16_t*)framebuffer)[i * RG_SCREEN_WIDTH + j] = red;
-            }
-        }
-        esp_lcd_panel_draw_bitmap(lcd_panel, 0, 0, RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT, framebuffer);
-        vTaskDelay(pdMS_TO_TICKS(2000)); // Show test pattern for 2 seconds
-        
-        // Clear back to black
-        memset(framebuffer, 0, RG_SCREEN_WIDTH * RG_SCREEN_HEIGHT * sizeof(uint16_t));
         esp_lcd_panel_draw_bitmap(lcd_panel, 0, 0, RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT, framebuffer);
     } else {
         RG_LOGI("ST7703: Panel framebuffer not available, using draw_bitmap");
