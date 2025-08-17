@@ -212,12 +212,12 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
 #endif
 
 #ifdef RG_GAMEPAD_TCA8418_MAP
-    //static uint32_t tca8418_state = 0;
+    static uint32_t tca8418_state = 0;
     if (tca8418_device)
     {
         rg_tca8418_event_t events[16];
         size_t event_count = 0;
-        
+
         if (rg_tca8418_read_events(tca8418_device, events, 16, &event_count))
         {
             for (size_t i = 0; i < event_count; i++)
@@ -225,15 +225,14 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
                 if (events[i].mapped_key != RG_KEY_NONE)
                 {
                     if (events[i].pressed)
-                        //tca8418_state |= events[i].mapped_key;
-                        state |= events[i].mapped_key;
+                        tca8418_state |= events[i].mapped_key;
                     else
-                        //tca8418_state &= ~events[i].mapped_key;
-                        state &= ~events[i].mapped_key;
+                        tca8418_state &= ~events[i].mapped_key;
                 }
             }
         }
-        //state |= tca8418_state;
+
+        state |= tca8418_state;
     }
 #endif
 
