@@ -47,6 +47,9 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
   Retro-Go mixes stereo to mono in software and retains its volume/mute controls.
   A streaming linear interpolator converts emulator audio to a fixed 48 kHz
   output, including 22.05 kHz and other native rates unsupported by MAX98357A.
+  Six 5 ms DMA buffers provide 30 ms of output buffering (25 ms writable while
+  one buffer plays), covering a 50 Hz frame plus scheduling/rendering jitter.
+  Consumed DMA buffers are cleared so an underrun cannot replay stale samples.
   The amplifier stays shut down during initialization and after audio teardown.
 
 ## Speaker audio
@@ -62,7 +65,8 @@ validation on a physical badge.
 
 Host regression checks: `python3 tools/tests/test_i2s_submit.py`. These cover
 submission boundaries, stereo/mono, volume/mute, failed writes, output sample
-counts and interpolation continuity across submissions at the emulator rates.
+counts and interpolation continuity across submissions at the emulator rates,
+plus the fixed-rate DMA time budget and underrun clearing configuration.
 
 The production M.2 and carrier net names differ. The mapping below follows the
 connector pad numbers in the official hardware release

@@ -20,11 +20,17 @@
 #define MUTE_DISABLE 1
 #endif
 
-// We can safely assume that no application will submit more than 640 audio frames per call to
-// driver_submit (32000/50). Using a single large buffer risks blocking the call needlessly because
-// some apps submit more than once per cycle or there could be occasional jitter (early submission).
+// Fixed-rate output must size DMA in output frames, not emulator input frames.
+// Six 5 ms descriptors leave 25 ms writable while one descriptor is playing:
+// enough for a 50 Hz frame plus scheduling/rendering jitter. At 48 kHz the old
+// 4 x 180 queue held only 15 ms and could replay stale audio between game frames.
+#if RG_AUDIO_I2S_SAMPLE_RATE
+#define DMA_BUFFER_COUNT 6
+#define DMA_BUFFER_LEN ((RG_AUDIO_I2S_SAMPLE_RATE + 199) / 200)
+#else
 #define DMA_BUFFER_COUNT 4
 #define DMA_BUFFER_LEN 180
+#endif
 
 static struct {
     const char *last_error;
@@ -94,6 +100,9 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
+#if RG_AUDIO_I2S_SAMPLE_RATE
+            .tx_desc_auto_clear = true, // Output silence instead of replaying old samples on underrun.
+#endif
         #if CONFIG_IDF_TARGET_ESP32
             .use_apll = true, // External DAC may care about accuracy
         #endif
