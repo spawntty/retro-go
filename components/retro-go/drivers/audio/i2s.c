@@ -31,12 +31,35 @@ static struct {
     int device;
     int volume;
     bool muted;
+#if RG_AUDIO_I2S_SAMPLE_RATE
+    unsigned sample_rate;
+    unsigned phase;
+    rg_audio_frame_t previous;
+    bool have_previous;
+#endif
 } state;
 
 static bool driver_init(int device, int sample_rate)
 {
     state.last_error = NULL;
     state.device = device;
+    if (sample_rate <= 0)
+    {
+        state.last_error = "Invalid sample rate";
+        return false;
+    }
+#if RG_AUDIO_I2S_SAMPLE_RATE
+    state.sample_rate = sample_rate;
+    state.phase = 0;
+    state.have_previous = false;
+    sample_rate = RG_AUDIO_I2S_SAMPLE_RATE;
+#endif
+
+    #ifdef RG_GPIO_SND_AMP_ENABLE
+        gpio_reset_pin(RG_GPIO_SND_AMP_ENABLE);
+        gpio_set_level(RG_GPIO_SND_AMP_ENABLE, MUTE_ENABLE);
+        gpio_set_direction(RG_GPIO_SND_AMP_ENABLE, GPIO_MODE_OUTPUT);
+    #endif
 
     if (state.device == 0)
     {
@@ -84,6 +107,8 @@ static bool driver_init(int device, int sample_rate)
                 .data_out_num = RG_GPIO_SND_I2S_DATA,
                 .data_in_num = GPIO_NUM_NC
             });
+            if (ret != ESP_OK)
+                i2s_driver_uninstall(I2S_NUM_0);
         }
         if (ret != ESP_OK)
             state.last_error = esp_err_to_name(ret);
@@ -91,21 +116,28 @@ static bool driver_init(int device, int sample_rate)
         state.last_error = "This device does not support external DAC mode!";
     #endif
     }
-    #ifdef RG_GPIO_SND_AMP_ENABLE
-        gpio_reset_pin(RG_GPIO_SND_AMP_ENABLE);
-        gpio_set_level(RG_GPIO_SND_AMP_ENABLE, MUTE_ENABLE);
-        gpio_set_direction(RG_GPIO_SND_AMP_ENABLE, GPIO_MODE_OUTPUT);
-    #endif
     return state.last_error == NULL;
 }
 
 static bool driver_set_sample_rates(int sampleRate)
 {
+#if RG_AUDIO_I2S_SAMPLE_RATE
+    if (sampleRate <= 0)
+        return false;
+    state.sample_rate = sampleRate;
+    state.phase = 0;
+    state.have_previous = false;
+    return true;
+#else
     return i2s_set_sample_rates(I2S_NUM_0, sampleRate) == ESP_OK;
+#endif
 }
 
 static bool driver_deinit(void)
 {
+    #ifdef RG_GPIO_SND_AMP_ENABLE
+    gpio_set_level(RG_GPIO_SND_AMP_ENABLE, MUTE_ENABLE);
+    #endif
     i2s_driver_uninstall(I2S_NUM_0);
     if (state.device == 0)
     {
@@ -121,9 +153,7 @@ static bool driver_deinit(void)
         gpio_reset_pin(RG_GPIO_SND_I2S_WS);
     #endif
     }
-    #ifdef RG_GPIO_SND_AMP_ENABLE
-    gpio_reset_pin(RG_GPIO_SND_AMP_ENABLE);
-    #endif
+    // Keep the amplifier shut down until the next initialization.
     return true;
 }
 
@@ -138,6 +168,12 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
     {
         int left = frames[i].left * volume;
         int right = frames[i].right * volume;
+
+        #if RG_AUDIO_EXT_DAC_MONO
+        // SD_MODE high selects one channel on MAX98357A. Feed the mono mix to both slots.
+        if (!use_internal_dac)
+            left = right = (left + right) / 2;
+        #endif
 
         if (use_internal_dac)
         {
@@ -172,16 +208,47 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
         // if (left > 32767) left = 32767; else if (left < -32768) left = -32767;
         // if (right > 32767) right = 32767; else if (right < -32768) right = -32767;
 
-        // Queue
-        buffer[pos].left = left;
-        buffer[pos].right = right;
-
-        if (i == count - 1 || ++pos == RG_COUNT(buffer))
+#if RG_AUDIO_I2S_SAMPLE_RATE
+        // Carry the fractional position and previous frame across submissions.
+        if (!state.have_previous)
         {
-            size_t written;
-            if (i2s_write(I2S_NUM_0, (void *)buffer, pos * 4, &written, 1000) != ESP_OK)
-                RG_LOGW("I2S Submission error! Written: %d/%d\n", written, pos * 4);
+            state.previous = (rg_audio_frame_t){.left = left, .right = right};
+            state.have_previous = true;
+        }
+        state.phase += RG_AUDIO_I2S_SAMPLE_RATE;
+        while (state.phase >= state.sample_rate)
+        {
+            state.phase -= state.sample_rate;
+            buffer[pos].left = left + (int64_t)(state.previous.left - left) * state.phase / RG_AUDIO_I2S_SAMPLE_RATE;
+            buffer[pos].right = right + (int64_t)(state.previous.right - right) * state.phase / RG_AUDIO_I2S_SAMPLE_RATE;
+#else
+        {
+            buffer[pos].left = left;
+            buffer[pos].right = right;
+#endif
+            if (++pos != RG_COUNT(buffer))
+                continue;
+            size_t written = 0;
+            size_t bytes = pos * sizeof(buffer[0]);
+            if (i2s_write(I2S_NUM_0, (void *)buffer, bytes, &written, 1000) != ESP_OK || written != bytes)
+            {
+                RG_LOGW("I2S Submission error! Written: %u/%u\n", (unsigned)written, (unsigned)bytes);
+                return false;
+            }
             pos = 0;
+        }
+#if RG_AUDIO_I2S_SAMPLE_RATE
+        state.previous = (rg_audio_frame_t){.left = left, .right = right};
+#endif
+    }
+    if (pos)
+    {
+        size_t written = 0;
+        size_t bytes = pos * sizeof(buffer[0]);
+        if (i2s_write(I2S_NUM_0, buffer, bytes, &written, 1000) != ESP_OK || written != bytes)
+        {
+            RG_LOGW("I2S Submission error! Written: %u/%u\n", (unsigned)written, (unsigned)bytes);
+            return false;
         }
     }
     return true;
@@ -194,6 +261,9 @@ static bool driver_set_mute(bool mute)
     gpio_set_level(RG_GPIO_SND_AMP_ENABLE, mute ? MUTE_ENABLE : MUTE_DISABLE);
     #endif
     state.muted = mute;
+#if RG_AUDIO_I2S_SAMPLE_RATE
+    state.have_previous = false;
+#endif
     return true;
 }
 

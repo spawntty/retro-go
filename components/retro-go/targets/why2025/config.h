@@ -16,9 +16,16 @@
 #define RG_GPIO_SDMMC_D2             GPIO_NUM_41
 #define RG_GPIO_SDMMC_D3             GPIO_NUM_42
 
-/* No supported audio/battery driver in the supplied BadgeVMS firmware. */
+/* MAX98357A on the carrier; trace through M.2 pins, not the MCU net names. */
 #define RG_AUDIO_USE_INT_DAC         0
-#define RG_AUDIO_USE_EXT_DAC         0
+#define RG_AUDIO_USE_EXT_DAC         1
+#define RG_AUDIO_EXT_DAC_MONO        1
+#define RG_AUDIO_I2S_SAMPLE_RATE     48000 // MAX98357A does not support every emulator's native rate
+#define RG_GPIO_SND_I2S_BCK          GPIO_NUM_26
+#define RG_GPIO_SND_I2S_WS           GPIO_NUM_25
+#define RG_GPIO_SND_I2S_DATA         GPIO_NUM_27
+#define RG_GPIO_SND_AMP_ENABLE       GPIO_NUM_24
+/* Battery measurement is not implemented. */
 #define RG_BATTERY_DRIVER            0
 
 #define RG_SCREEN_DRIVER            3   // ST7703 over MIPI-DSI

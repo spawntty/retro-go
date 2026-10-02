@@ -42,6 +42,42 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
 - Keyboard: TCA8418 at I2C address 0x34, SDA18/SCL20, eight rows and ten columns.
   Polling preserves held keys and simultaneous presses. FIFO overflow or I2C read
   failure clears held state; release and press keys again after recovery.
+- Audio: MAX98357A with 16-bit standard I²S, BCLK GPIO26, LRCLK GPIO25,
+  DIN GPIO27, and active-high amplifier enable GPIO24. No MCLK is needed.
+  Retro-Go mixes stereo to mono in software and retains its volume/mute controls.
+  A streaming linear interpolator converts emulator audio to a fixed 48 kHz
+  output, including 22.05 kHz and other native rates unsupported by MAX98357A.
+  The amplifier stays shut down during initialization and after audio teardown.
+
+## Speaker audio
+
+Connect a suitable 4 Ω or 8 Ω speaker across the two **LS1** pads on the carrier.
+These are differential speaker outputs; neither pad is ground. Start at low
+volume. The MAX98357A is the amplifier, so a speaker must still be attached.
+
+Audio defaults to the **Ext DAC** sink on a fresh configuration. If your existing
+settings select **Dummy**, change the audio output to **Ext DAC** in the options.
+Audible playback, mute/unmute, volume, and switching games/sample rates still need
+validation on a physical badge.
+
+Host regression checks: `python3 tools/tests/test_i2s_submit.py`. These cover
+submission boundaries, stereo/mono, volume/mute, failed writes, output sample
+counts and interpolation continuity across submissions at the emulator rates.
+
+The production M.2 and carrier net names differ. The mapping below follows the
+connector pad numbers in the official hardware release
+[`v2.5-corrected-SD-detection`](https://gitlab.com/why2025/team-badge/Hardware/-/tree/v2.5-corrected-SD-detection):
+
+| ESP32-P4 GPIO | M.2 net name | Connector pad | Carrier signal |
+| --- | --- | --- | --- |
+| 24 | I2S.DATA | 2 | SD_MODE (enable) |
+| 27 | I2S.LRCK | 4 | DIN |
+| 26 | I2S.MCLK | 6 | BCLK |
+| 25 | I2S.SCLK | 8 | LRCLK |
+
+GPIO24 high selects the MAX98357A's left channel; both transmitted slots contain
+the averaged stereo signal so audio from either game channel is preserved.
+The carrier has a 10 kΩ pull-down on SD_MODE and a 100 kΩ gain resistor to ground.
 
 ## Controls
 
@@ -57,13 +93,16 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
 
 ## Limitations
 
-Audio, battery measurement, brightness control, and ESP32-C6 networking are not
-implemented. The supplied BadgeVMS drivers provide no audio/battery implementation
-or backlight GPIO to reuse. Audio uses Retro-Go's timed dummy sink. Network update
-support is disabled.
+Battery measurement, brightness control, and ESP32-C6 networking are not
+implemented. The supplied BadgeVMS drivers provide no battery implementation
+or backlight GPIO to reuse. Network update support is disabled.
 
 ## Source provenance
 
+- Official WHY2025 hardware release linked above: `M2/badgeM2Card.kicad_pcb`
+  and `Carrier/badgeCarrierCard.kicad_pcb` for the end-to-end audio pin mapping.
+  [MAX98357A datasheet](https://www.analog.com/media/en/technical-documentation/data-sheets/MAX98357A-MAX98357B.pdf)
+  for I²S format, channel selection and speaker output requirements.
 - `firmware/badgevms/drivers/st7703.c` and `st7703.h`: panel wiring, power,
   timing and supplier initialization commands. Adapted tables in `panel.h` retain
   their BadgeVMS GPL-3.0-or-later notice; see `COPYING.BadgeVMS`.
