@@ -12,6 +12,8 @@
 #include "targets/esplay-micro/config.h"
 #elif defined(RG_TARGET_FRI3D_2024)
 #include "targets/fri3d-2024/config.h"
+#elif defined(RG_TARGET_WHY2025)
+#include "targets/why2025/config.h"
 #elif defined(RG_TARGET_MRGC_G32)
 #include "targets/mrgc-g32/config.h"
 #elif defined(RG_TARGET_MRGC_GBM)

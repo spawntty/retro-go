@@ -8,6 +8,12 @@ else() # esp-idf 4.1 - 4.4
     set(COMPONENT_REQUIRES "spi_flash fatfs app_update esp_adc_cal json nvs_flash esp_wifi esp_http_client")
 endif()
 
+# RG_BUILD_TARGET isn't defined yet when idf evaluates COMPONENT_REQUIRES (early expansion),
+# so the requirements are keyed on IDF_TARGET instead
+if(IDF_TARGET STREQUAL "esp32p4" AND IDF_VERSION_MAJOR EQUAL 5 AND IDF_VERSION_MINOR GREATER 4)
+    list(APPEND COMPONENT_REQUIRES esp_lcd esp_lcd_st7703 esp_hw_support)
+endif()
+
 register_component()
 
 # Small size is preferred because of the small cache and most things here aren't performance sensitive!
