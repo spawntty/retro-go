@@ -58,7 +58,8 @@ static void lcd_init(void)
     };
     esp_lcd_panel_dev_config_t panel = {
         .reset_gpio_num = RG_GPIO_LCD_RST, .bits_per_pixel = 16,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR, .vendor_config = &vendor,
+        .rgb_ele_order = RG_SCREEN_RGB_BGR ? LCD_RGB_ELEMENT_ORDER_BGR : LCD_RGB_ELEMENT_ORDER_RGB,
+        .vendor_config = &vendor,
         .flags.reset_active_high = 1,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7703(lcd_io, &panel, &lcd_panel));

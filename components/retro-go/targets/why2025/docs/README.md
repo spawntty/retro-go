@@ -20,8 +20,12 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
 
 ## Hardware implementation
 
-- ST7703: 720×720 RGB565, little-endian pixels, BGR panel order, reset GPIO17
+- ST7703: 720×720 RGB565, little-endian pixels, RGB panel order, reset GPIO17
   active high. Two DSI lanes at 1000 Mbps; PHY LDO channel 3 at 2500 mV.
+  `RG_SCREEN_RGB_BGR` selects RGB (`0`, default) or BGR (`1`). If red and blue
+  appear exchanged, toggle this setting; validate with red, green, and blue
+  images on the badge. Byte order is controlled separately by
+  `RG_SCREEN_PIXEL_FORMAT` and remains little-endian.
 - Bono timing: 47 MHz pixel clock, horizontal sync/back/front porch 60/120/106,
   vertical sync/back/front porch 4/20/20. Supplier command tables follow BadgeVMS.
 - Mountain panels (blue border): change `RG_WHY2025_PANEL_MOUNTAIN` in `config.h`
