@@ -11,7 +11,7 @@ endif()
 # RG_BUILD_TARGET isn't defined yet when idf evaluates COMPONENT_REQUIRES (early expansion),
 # so the requirements are keyed on IDF_TARGET instead
 if(IDF_TARGET STREQUAL "esp32p4" AND IDF_VERSION_MAJOR EQUAL 5 AND IDF_VERSION_MINOR GREATER 4)
-    list(APPEND COMPONENT_REQUIRES esp_lcd esp_lcd_st7703 esp_hw_support)
+    list(APPEND COMPONENT_REQUIRES esp_lcd esp_lcd_st7703 esp_hw_support esp_driver_ppa esp_mm)
 endif()
 
 register_component()

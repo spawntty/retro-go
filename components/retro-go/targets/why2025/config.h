@@ -24,7 +24,7 @@
 #define RG_SCREEN_DRIVER            3   // ST7703 over MIPI-DSI
 #define RG_SCREEN_WIDTH             720
 #define RG_SCREEN_HEIGHT            720
-#define RG_SCREEN_ROTATION          0
+#define RG_SCREEN_ROTATION          90  // ST7703: degrees CCW (0 or 90)
 #define RG_SCREEN_RGB_BGR           1   // BadgeVMS uses BGR for this panel
 #define RG_SCREEN_PIXEL_FORMAT      1   // Native little-endian RGB565
 #define RG_SCREEN_BACKLIGHT         0   // No backlight GPIO in BadgeVMS

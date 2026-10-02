@@ -417,9 +417,10 @@ static void display_task(void *arg)
 
         write_update(update);
         // draw_on_screen_display(0, display.screen.height);
-        rg_task_receive(&msg, -1);
-
+        // Finish presenting before releasing the queued frame: GUI writers
+        // use the queue to wait until the display backend is idle.
         lcd_sync();
+        rg_task_receive(&msg, -1);
     }
 }
 

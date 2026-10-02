@@ -26,9 +26,18 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
   vertical sync/back/front porch 4/20/20. Supplier command tables follow BadgeVMS.
 - Mountain panels (blue border): change `RG_WHY2025_PANEL_MOUNTAIN` in `config.h`
   to `1`. This selects the separate supplier table and 58 MHz timings.
-- Display updates use synchronous CPU copies into one DPI-owned PSRAM framebuffer.
-  The ESP-IDF DPI driver handles cache writeback. Partial windows and chunks
-  ending inside a row are supported. Single buffering can cause visible tearing.
+- The display is rotated **90 degrees counterclockwise** using the ESP32-P4 PPA.
+  `RG_SCREEN_ROTATION` in `config.h` accepts `90` (default) or `0` (unrotated).
+  These are degrees for this backend, not the SPI drivers' MADCTL bit values.
+  Menus and games share the rotation; keyboard mappings are unchanged.
+- Updates accumulate in an RGB565 shadow image. At display synchronization, PPA
+  rotates the dirty bounding rectangle into a separate packed buffer, then a
+  synchronous DPI copy presents it. Partial windows, gaps between updates, and
+  chunks ending inside a row are supported. Two cache-aligned PSRAM buffers add
+  2,073,600 bytes (about 1.98 MiB); neither is allocated with rotation disabled.
+  PPA handles cache synchronization for rotation, and DPI handles scanout cache
+  writeback. Single scanout buffering can still cause visible tearing.
+  Rotation throughput and visual orientation require validation on hardware.
 - SD card: SDMMC slot 0, four bits, CLK43/CMD44/D0–D3=39–42, power LDO channel 4.
 - Keyboard: TCA8418 at I2C address 0x34, SDA18/SCL20, eight rows and ten columns.
   Polling preserves held keys and simultaneous presses. FIFO overflow or I2C read
