@@ -44,10 +44,10 @@
 
 /* TCA8418 FIFO scancodes from BadgeVMS drivers/tca8418.c. */
 #define RG_GAMEPAD_KBD_MAP { \
-    {RG_KEY_UP,     .src = 0x37}, \
-    {RG_KEY_DOWN,   .src = 0x34}, \
-    {RG_KEY_LEFT,   .src = 0x33}, \
-    {RG_KEY_RIGHT,  .src = 0x35}, \
+    {RG_KEY_UP,     .src = 0x17}, /* W */ \
+    {RG_KEY_DOWN,   .src = 0x21}, /* S */ \
+    {RG_KEY_LEFT,   .src = 0x20}, /* A */ \
+    {RG_KEY_RIGHT,  .src = 0x22}, /* D */ \
     {RG_KEY_A,      .src = 0x05}, /* Circle */ \
     {RG_KEY_B,      .src = 0x04}, /* Cross */ \
     {RG_KEY_X,      .src = 0x03}, /* Triangle */ \

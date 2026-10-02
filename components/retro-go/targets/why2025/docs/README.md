@@ -83,7 +83,7 @@ The carrier has a 10 kΩ pull-down on SD_MODE and a 100 kΩ gain resistor to gro
 
 | Badge key | Retro-Go action |
 | --- | --- |
-| Arrow keys | D-pad |
+| W / A / S / D | D-pad up / left / down / right |
 | Circle / Cross | A / B |
 | Triangle / Square | X / Y |
 | Cloud / Diamond | L / R |
