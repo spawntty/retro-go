@@ -18,7 +18,6 @@ static int16_t map_viewport_to_source_x[RG_SCREEN_WIDTH + 1];
 static int16_t map_viewport_to_source_y[RG_SCREEN_HEIGHT + 1];
 static uint32_t screen_line_checksum[RG_SCREEN_HEIGHT + 1];
 
-#define LINE_IS_REPEATED(Y) (map_viewport_to_source_y[(Y)] == map_viewport_to_source_y[(Y) - 1])
 // This is to avoid flooring a number that is approximated to .9999999 and be explicit about it
 #define FLOAT_TO_INT(x) ((int)((x) + 0.1f))
 
@@ -54,6 +53,12 @@ static inline uint16_t *lcd_get_buffer_ptr(int left, int top);
 #include "drivers/display/sdl2.h"
 #else
 #include "drivers/display/dummy.h"
+#endif
+
+#ifdef LCD_SCALE_STEPS
+// Viewport scale in 1/LCD_SCALE_STEPS units, for hardware scalers
+static int display_scale_x = LCD_SCALE_STEPS;
+static int display_scale_y = LCD_SCALE_STEPS;
 #endif
 
 static int draw_on_screen_display(int region_start, int region_end)
@@ -114,6 +119,71 @@ static inline void write_update(const rg_surface_t *update)
 {
     const int64_t time_start = rg_system_timer();
 
+#if LCD_ACCESS_MODE == 2
+    // The hardware scaler writes the frame into the hidden scanout buffer, so
+    // the CPU touches native-resolution pixels at most. Filters do not apply.
+    const int scale_x = display_scale_x;
+    const int scale_y = display_scale_y;
+    int draw_left = display.viewport.left;
+    int draw_top = display.viewport.top;
+    int src_x = 0, src_y = 0;
+    int src_w = update->width, src_h = update->height;
+
+    // Zoomed past the screen: scale only the source pixels that fit
+    if (draw_left < 0)
+    {
+        src_x = -draw_left * LCD_SCALE_STEPS / scale_x;
+        src_w = RG_MIN(src_w - src_x, display.screen.width * LCD_SCALE_STEPS / scale_x);
+        draw_left = (display.screen.width - src_w * scale_x / LCD_SCALE_STEPS) / 2;
+    }
+    if (draw_top < 0)
+    {
+        src_y = -draw_top * LCD_SCALE_STEPS / scale_y;
+        src_h = RG_MIN(src_h - src_y, display.screen.height * LCD_SCALE_STEPS / scale_y);
+        draw_top = (display.screen.height - src_h * scale_y / LCD_SCALE_STEPS) / 2;
+    }
+
+    const void *pixels = update->data + update->offset;
+    int pic_w = update->stride / 2;
+    int pic_h = update->height;
+    bool swap;
+
+    switch (update->format)
+    {
+        case RG_PIXEL_565_LE:
+        case RG_PIXEL_565_BE:
+            // Read in place; the PPA swaps bytes itself
+            swap = update->format == RG_PIXEL_565_BE;
+            break;
+        case RG_PIXEL_PAL565_LE:
+        case RG_PIXEL_PAL565_BE:
+        {
+            // The PPA has no indexed input; expand only the visible block
+            uint16_t *dst = lcd_get_scratch(src_w * src_h);
+            const uint16_t *palette = update->palette;
+            for (int y = 0; y < src_h; ++y)
+            {
+                const uint8_t *src = pixels + (src_y + y) * update->stride + src_x;
+                for (int x = 0; x < src_w; ++x)
+                    dst[y * src_w + x] = palette[src[x]];
+            }
+            pixels = dst;
+            pic_w = src_w;
+            pic_h = src_h;
+            src_x = src_y = 0;
+            swap = update->format == RG_PIXEL_PAL565_BE;
+            break;
+        }
+        default:
+            RG_PANIC("Unsupported display pixel format");
+    }
+
+    lcd_draw_scaled(pixels, pic_w, pic_h, src_x, src_y, src_w, src_h, swap, scale_x, scale_y,
+                    display.screen.margins.left + draw_left, display.screen.margins.top + draw_top);
+    draw_on_screen_display(0, display.screen.height);
+    lcd_flip();
+    counters.fullFrames++;
+#else
     bool filter_x = display.viewport.filter_x;
     bool filter_y = display.viewport.filter_y;
     int draw_left = display.viewport.left;
@@ -148,6 +218,7 @@ static inline void write_update(const rg_surface_t *update)
     const bool partial_update = RG_SCREEN_PARTIAL_UPDATES && LCD_ACCESS_MODE == 0;
     // const bool interlace = false;
 
+    #define SOURCE_LINE_IS_REPEATED(Y) ((Y) > 0 && map_viewport_to_source_y[(Y)] == map_viewport_to_source_y[(Y) - 1])
     int lines_per_buffer = LCD_BUFFER_LENGTH / draw_width;
     int lines_remaining = draw_height;
     int lines_updated = 0;
@@ -170,8 +241,8 @@ static inline void write_update(const rg_surface_t *update)
         // The vertical filter requires a block to start and end with unscaled lines
         if (filter_y)
         {
-            while (lines_to_copy > 1 && (LINE_IS_REPEATED(y + lines_to_copy - 1) ||
-                                         LINE_IS_REPEATED(y + lines_to_copy)))
+            while (lines_to_copy > 1 && (SOURCE_LINE_IS_REPEATED(y + lines_to_copy - 1) ||
+                                         SOURCE_LINE_IS_REPEATED(y + lines_to_copy)))
                 --lines_to_copy;
         }
 #if LCD_ACCESS_MODE == 0
@@ -186,7 +257,7 @@ static inline void write_update(const rg_surface_t *update)
 
         for (int i = 0; i < lines_to_copy; ++i)
         {
-            if (i > 0 && LINE_IS_REPEATED(y))
+            if (i > 0 && SOURCE_LINE_IS_REPEATED(y))
             {
                 memcpy(line_buffer_ptr, line_buffer_ptr - draw_width, draw_width * 2);
                 line_buffer_ptr += draw_width;
@@ -252,7 +323,7 @@ static inline void write_update(const rg_surface_t *update)
             int top = y - lines_to_copy;
             for (int i = 1; i < lines_to_copy - 1; ++i)
             {
-                if (LINE_IS_REPEATED(top + i))
+                if (SOURCE_LINE_IS_REPEATED(top + i))
                 {
                     uint16_t *lineA = line_buffer + (i - 1) * draw_width;
                     uint16_t *lineB = line_buffer + (i + 0) * draw_width;
@@ -292,10 +363,13 @@ static inline void write_update(const rg_surface_t *update)
         lines_remaining -= lines_to_copy;
     }
 
+    #undef SOURCE_LINE_IS_REPEATED
+
     if (lines_updated > draw_height * 0.80f)
         counters.fullFrames++;
     else
         counters.partFrames++;
+#endif
     counters.busyTime += rg_system_timer() - time_start;
 }
 
@@ -328,9 +402,17 @@ static void update_viewport_scaling(void)
         new_height = FLOAT_TO_INT(src_height * config.custom_zoom);
     }
 
+#ifdef LCD_SCALE_STEPS
+    // Snap to the hardware scaler's steps so the viewport is exactly its output
+    display_scale_x = RG_MAX(1, new_width * LCD_SCALE_STEPS / src_width);
+    display_scale_y = RG_MAX(1, new_height * LCD_SCALE_STEPS / src_height);
+    new_width = src_width * display_scale_x / LCD_SCALE_STEPS;
+    new_height = src_height * display_scale_y / LCD_SCALE_STEPS;
+#else
     // Everything works better when we use even dimensions!
     new_width &= ~1;
     new_height &= ~1;
+#endif
 
     display.viewport.left = (screen_width - new_width) / 2;
     display.viewport.top = (screen_height - new_height) / 2;
@@ -577,7 +659,7 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
     height = RG_MIN(height, display.screen.height - top);
 
     // This can happen when left or top is out of bound
-    if (width < 0 || height < 0)
+    if (width <= 0 || height <= 0)
         return;
 
     // This will work for now because we rarely draw from different threads (so all we need is ensure
@@ -597,7 +679,9 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
     const int screen_left = display.screen.margins.left + left;
     const int screen_top = display.screen.margins.top + top;
 
-#if LCD_ACCESS_MODE == 0
+#if LCD_ACCESS_MODE == 2
+    lcd_write_rect(screen_left, screen_top, width, height, buffer, stride, (flags & RG_DISPLAY_WRITE_BE_DATA) != 0);
+#elif LCD_ACCESS_MODE == 0
     lcd_set_window(screen_left, screen_top, width, height);
 
     for (size_t y = 0; y < height;)
@@ -649,7 +733,9 @@ void rg_display_clear_rect(int left, int top, int width, int height, uint16_t co
 #else /* 565_LE */
     const uint16_t color = color_le;
 #endif
-#if LCD_ACCESS_MODE == 0
+#if LCD_ACCESS_MODE == 2
+    lcd_fill_rect(screen_left, screen_top, width, height, color);
+#elif LCD_ACCESS_MODE == 0
     int pixels_remaining = width * height;
     if (pixels_remaining <= 0)
         return;
