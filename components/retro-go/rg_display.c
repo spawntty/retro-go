@@ -56,7 +56,10 @@ static inline uint16_t *lcd_get_buffer_ptr(int left, int top);
 #endif
 
 #ifdef LCD_SCALE_STEPS
-// Viewport scale in 1/LCD_SCALE_STEPS units, for hardware scalers
+// Hardware scalers interpolate, so frames are first enlarged by an integer
+// factor (nearest neighbour), then scaled by display_scale_* / LCD_SCALE_STEPS.
+static int display_prescale_x = 1;
+static int display_prescale_y = 1;
 static int display_scale_x = LCD_SCALE_STEPS;
 static int display_scale_y = LCD_SCALE_STEPS;
 #endif
@@ -120,10 +123,12 @@ static inline void write_update(const rg_surface_t *update)
     const int64_t time_start = rg_system_timer();
 
 #if LCD_ACCESS_MODE == 2
-    // The hardware scaler writes the frame into the hidden scanout buffer, so
-    // the CPU touches native-resolution pixels at most. Filters do not apply.
-    const int scale_x = display_scale_x;
-    const int scale_y = display_scale_y;
+    // The PPA always interpolates. Enlarging by the integer part of the scale
+    // first leaves it only the remainder (< 2x), which keeps pixels sharp
+    // ("sharp bilinear"); integer scales are not interpolated at all.
+    const int pre_x = display_prescale_x, pre_y = display_prescale_y;
+    const int scale_x = display_scale_x, scale_y = display_scale_y;
+    const int total_x = pre_x * scale_x, total_y = pre_y * scale_y;
     int draw_left = display.viewport.left;
     int draw_top = display.viewport.top;
     int src_x = 0, src_y = 0;
@@ -132,50 +137,64 @@ static inline void write_update(const rg_surface_t *update)
     // Zoomed past the screen: scale only the source pixels that fit
     if (draw_left < 0)
     {
-        src_x = -draw_left * LCD_SCALE_STEPS / scale_x;
-        src_w = RG_MIN(src_w - src_x, display.screen.width * LCD_SCALE_STEPS / scale_x);
-        draw_left = (display.screen.width - src_w * scale_x / LCD_SCALE_STEPS) / 2;
+        src_x = -draw_left * LCD_SCALE_STEPS / total_x;
+        src_w = RG_MIN(src_w - src_x, display.screen.width * LCD_SCALE_STEPS / total_x);
+        draw_left = (display.screen.width - src_w * total_x / LCD_SCALE_STEPS) / 2;
     }
     if (draw_top < 0)
     {
-        src_y = -draw_top * LCD_SCALE_STEPS / scale_y;
-        src_h = RG_MIN(src_h - src_y, display.screen.height * LCD_SCALE_STEPS / scale_y);
-        draw_top = (display.screen.height - src_h * scale_y / LCD_SCALE_STEPS) / 2;
+        src_y = -draw_top * LCD_SCALE_STEPS / total_y;
+        src_h = RG_MIN(src_h - src_y, display.screen.height * LCD_SCALE_STEPS / total_y);
+        draw_top = (display.screen.height - src_h * total_y / LCD_SCALE_STEPS) / 2;
     }
 
+    const int format = update->format;
     const void *pixels = update->data + update->offset;
+    const uint16_t *palette = update->palette;
     int pic_w = update->stride / 2;
     int pic_h = update->height;
-    bool swap;
+    // Unenlarged RGB565 is read in place; the PPA swaps bytes itself
+    bool swap = format == RG_PIXEL_565_BE;
 
-    switch (update->format)
+    if (format != RG_PIXEL_565_LE && format != RG_PIXEL_565_BE &&
+        format != RG_PIXEL_PAL565_LE && format != RG_PIXEL_PAL565_BE)
+        RG_PANIC("Unsupported display pixel format");
+
+    // Enlargements and indexed frames (unsupported by the PPA) go through scratch
+    if (pre_x > 1 || pre_y > 1 || (format & RG_PIXEL_PALETTE))
     {
-        case RG_PIXEL_565_LE:
-        case RG_PIXEL_565_BE:
-            // Read in place; the PPA swaps bytes itself
-            swap = update->format == RG_PIXEL_565_BE;
-            break;
-        case RG_PIXEL_PAL565_LE:
-        case RG_PIXEL_PAL565_BE:
-        {
-            // The PPA has no indexed input; expand only the visible block
-            uint16_t *dst = lcd_get_scratch(src_w * src_h);
-            const uint16_t *palette = update->palette;
-            for (int y = 0; y < src_h; ++y)
-            {
-                const uint8_t *src = pixels + (src_y + y) * update->stride + src_x;
-                for (int x = 0; x < src_w; ++x)
-                    dst[y * src_w + x] = palette[src[x]];
+        // Expand the visible block to little-endian RGB565, enlarged by pre_x/pre_y
+        pic_w = src_w * pre_x;
+        pic_h = src_h * pre_y;
+        uint16_t *dst = lcd_get_scratch(pic_w * pic_h);
+        const void *base = pixels;
+        #define EXPAND(TYPE, PIXEL) \
+            for (int y = 0; y < src_h; ++y) \
+            { \
+                const TYPE *src = base + (src_y + y) * update->stride + src_x * sizeof(TYPE); \
+                uint16_t *row = dst + y * pre_y * pic_w, *out = row; \
+                for (int x = 0; x < src_w; ++x) \
+                { \
+                    uint16_t pixel = (PIXEL); \
+                    for (int i = 0; i < pre_x; ++i) \
+                        *out++ = pixel; \
+                } \
+                for (int i = 1; i < pre_y; ++i) \
+                    memcpy(row + i * pic_w, row, pic_w * 2); \
             }
-            pixels = dst;
-            pic_w = src_w;
-            pic_h = src_h;
-            src_x = src_y = 0;
-            swap = update->format == RG_PIXEL_PAL565_BE;
-            break;
+        switch (format)
+        {
+            case RG_PIXEL_565_LE: EXPAND(uint16_t, src[x]); break;
+            case RG_PIXEL_565_BE: EXPAND(uint16_t, (src[x] << 8) | (src[x] >> 8)); break;
+            case RG_PIXEL_PAL565_LE: EXPAND(uint8_t, palette[src[x]]); break;
+            case RG_PIXEL_PAL565_BE: EXPAND(uint8_t, (palette[src[x]] << 8) | (palette[src[x]] >> 8)); break;
         }
-        default:
-            RG_PANIC("Unsupported display pixel format");
+        #undef EXPAND
+        pixels = dst;
+        src_x = src_y = 0;
+        src_w = pic_w;
+        src_h = pic_h;
+        swap = false;
     }
 
     lcd_draw_scaled(pixels, pic_w, pic_h, src_x, src_y, src_w, src_h, swap, scale_x, scale_y,
@@ -403,11 +422,14 @@ static void update_viewport_scaling(void)
     }
 
 #ifdef LCD_SCALE_STEPS
-    // Snap to the hardware scaler's steps so the viewport is exactly its output
-    display_scale_x = RG_MAX(1, new_width * LCD_SCALE_STEPS / src_width);
-    display_scale_y = RG_MAX(1, new_height * LCD_SCALE_STEPS / src_height);
-    new_width = src_width * display_scale_x / LCD_SCALE_STEPS;
-    new_height = src_height * display_scale_y / LCD_SCALE_STEPS;
+    // Integer prescale, then snap the remainder to the hardware scaler's steps
+    // so the viewport is exactly its output
+    display_prescale_x = RG_MAX(1, new_width / src_width);
+    display_prescale_y = RG_MAX(1, new_height / src_height);
+    display_scale_x = RG_MAX(1, new_width * LCD_SCALE_STEPS / (src_width * display_prescale_x));
+    display_scale_y = RG_MAX(1, new_height * LCD_SCALE_STEPS / (src_height * display_prescale_y));
+    new_width = src_width * display_prescale_x * display_scale_x / LCD_SCALE_STEPS;
+    new_height = src_height * display_prescale_y * display_scale_y / LCD_SCALE_STEPS;
 #else
     // Everything works better when we use even dimensions!
     new_width &= ~1;

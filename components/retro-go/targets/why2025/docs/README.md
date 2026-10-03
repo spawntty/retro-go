@@ -6,15 +6,31 @@ Hardware validation is still required.
 
 ## Build
 
-Use ESP-IDF 5.5 with its ESP32-P4 toolchain and an exported IDF environment.
+Use ESP-IDF 5.5.5 with its ESP32-P4 toolchain and an exported IDF environment.
 From the Retro-Go root:
 
 ```sh
 python rg_tool.py --target why2025 build-img --no-networking
 ```
 
-The target retains the GB300-P4 base configuration for 16 MB flash and 200 MHz
-PSRAM, with PSRAM initialized by ESP-IDF and available to the allocator. Do not
+The target configuration is regenerated with ESP-IDF 5.5.5: 16 MB flash,
+360 MHz CPU, 200 MHz PSRAM, performance optimization (`-O2`), and a 256 KB L2
+cache with 128-byte lines, matching BadgeVMS's cache settings. The larger cache
+uses 128 KB more internal SRAM than the previous 128 KB cache. Emulator and
+Retro-Go component optimization overrides still apply. Benchmark on hardware;
+these settings alone do not establish a speedup over the previous build or S3.
+
+After changing the target `sdkconfig`, regenerate the per-app configurations:
+
+```sh
+python rg_tool.py --target why2025 clean
+python rg_tool.py --target why2025 build-img --no-networking
+```
+
+Existing per-app `sdkconfig` files take precedence over target defaults, so an
+ordinary incremental build does not apply changes to existing settings.
+
+PSRAM is initialized by ESP-IDF and available to the allocator. Do not
 copy BadgeVMS's disabled PSRAM boot initialization: BadgeVMS initializes its own
 memory system, whereas Retro-Go and the DPI driver need the IDF heap.
 
@@ -30,18 +46,26 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
   vertical sync/back/front porch 4/20/20. Supplier command tables follow BadgeVMS.
 - Mountain panels (blue border): change `RG_WHY2025_PANEL_MOUNTAIN` in `config.h`
   to `1`. This selects the separate supplier table and 58 MHz timings.
-- The display is rotated **90 degrees counterclockwise** using the ESP32-P4 PPA.
-  `RG_SCREEN_ROTATION` in `config.h` accepts `90` (default) or `0` (unrotated).
-  These are degrees for this backend, not the SPI drivers' MADCTL bit values.
-  Menus and games share the rotation; keyboard mappings are unchanged.
-- Updates accumulate in an RGB565 shadow image. At display synchronization, PPA
-  rotates the dirty bounding rectangle into a separate packed buffer, then a
-  synchronous DPI copy presents it. Partial windows, gaps between updates, and
-  chunks ending inside a row are supported. Two cache-aligned PSRAM buffers add
-  2,073,600 bytes (about 1.98 MiB); neither is allocated with rotation disabled.
-  PPA handles cache synchronization for rotation, and DPI handles scanout cache
-  writeback. Single scanout buffering can still cause visible tearing.
-  Rotation throughput and visual orientation require validation on hardware.
+- `RG_SCREEN_ROTATION` accepts `90` (default, **90 degrees counterclockwise**)
+  or `0` (unrotated). These are degrees, not SPI MADCTL bit values. The panel
+  runs in DSI video mode without frame memory, so MADCTL cannot swap axes; the
+  ESP32-P4 PPA does the rotation. Keyboard mappings are unchanged.
+- Game frames: the PPA scales and rotates each frame in one operation into the
+  hidden one of two DPI scanout buffers, which is then flipped at the next
+  refresh (no tearing). Unenlarged RGB565 frames are read in place (the PPA swaps
+  big-endian bytes); indexed frames are expanded at native resolution into a
+  PSRAM scratch buffer first (see below for enlargement).
+- The PPA always interpolates when scaling (it has no nearest-neighbour mode).
+  To keep pixels sharp, the CPU first enlarges the frame by the integer part of
+  the scale (pixel duplication), and the PPA scales only the remaining factor,
+  below 2x ("sharp bilinear"). Integer scales such as NES 3x are therefore not
+  interpolated; Game Boy at 4.5x is enlarged 4x, then scaled 1.125x. The
+  remainder is snapped to the PPA's 1/16 steps, so the viewport may be a few
+  pixels smaller than with other targets. The smoothing filter setting is
+  ignored. A refresh that races a flip by a few cycles can tear one frame.
+- Menus, borders, clears and the OSD are written by the CPU to both buffers in
+  physical row order, so they persist across flips. The two scanout buffers use
+  2,073,600 bytes of PSRAM.
 - SD card: SDMMC slot 0, four bits, CLK43/CMD44/D0–D3=39–42, power LDO channel 4.
 - Keyboard: TCA8418 at I2C address 0x34, SDA18/SCL20, eight rows and ten columns.
   Polling preserves held keys and simultaneous presses. FIFO overflow or I2C read
@@ -55,6 +79,22 @@ memory system, whereas Retro-Go and the DPI driver need the IDF heap.
   one buffer plays), covering a 50 Hz frame plus scheduling/rendering jitter.
   Consumed DMA buffers are cleared so an underrun cannot replay stale samples.
   The amplifier stays shut down during initialization and after audio teardown.
+
+## Display validation
+
+```sh
+python3 tools/tests/test_display_rotation.py
+python3 tools/tests/test_st7703.py
+```
+
+The host tests run the production presentation path and driver functions
+against a simulated panel and a PPA model (nearest sampling, 1/16 scale steps,
+counterclockwise rotation). They cover both orientations, RGB565 and indexed
+frames in both byte orders, stride/offset, all scaling modes including zoom
+cropping, flips and waiting for the refresh, CPU writes reaching both buffers,
+clipping, and cache publication before each PPA operation. They do not measure
+hardware throughput, check the PPA's real sampling, or detect tearing. Check
+orientation, FPS and menus on hardware.
 
 ## Speaker audio
 
