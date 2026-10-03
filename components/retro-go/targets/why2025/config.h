@@ -49,14 +49,14 @@
     {RG_KEY_LEFT,   .src = 0x20}, /* A */ \
     {RG_KEY_RIGHT,  .src = 0x22}, /* D */ \
     {RG_KEY_A,      .src = 0x05}, /* Circle */ \
-    {RG_KEY_B,      .src = 0x04}, /* Cross */ \
-    {RG_KEY_X,      .src = 0x03}, /* Triangle */ \
-    {RG_KEY_Y,      .src = 0x02}, /* Square */ \
-    {RG_KEY_L,      .src = 0x06}, /* Cloud */ \
-    {RG_KEY_R,      .src = 0x07}, /* Diamond */ \
-    {RG_KEY_START,  .src = 0x3B}, /* Return */ \
-    {RG_KEY_SELECT, .src = 0x08}, /* Backspace */ \
-    {RG_KEY_MENU,   .src = 0x01}, /* Escape */ \
+    {RG_KEY_B,      .src = 0x06}, /* Cloud */ \
+    {RG_KEY_X,      .src = 0x07}, /* Diamond */ \
+    {RG_KEY_Y,      .src = 0x08}, /* Backspace */ \
+    {RG_KEY_L,      .src = 0x03}, /* Triangle */ \
+    {RG_KEY_R,      .src = 0x04}, /* Cross */ \
+    {RG_KEY_START,  .src = 0x01}, /* ESC */ \
+    {RG_KEY_SELECT, .src = 0x02}, /* Square */ \
+    {RG_KEY_MENU,   .src = 0x0B}, /* Backtick */ \
     {RG_KEY_OPTION, .src = 0x15}, /* Tab */ \
 }
 #define RG_RECOVERY_BTN             RG_KEY_MENU

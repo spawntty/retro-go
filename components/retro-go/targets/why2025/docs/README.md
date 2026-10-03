@@ -132,12 +132,34 @@ The carrier has a 10 kΩ pull-down on SD_MODE and a 100 kΩ gain resistor to gro
 | Badge key | Retro-Go action |
 | --- | --- |
 | W / A / S / D | D-pad up / left / down / right |
-| Circle / Cross | A / B |
-| Triangle / Square | X / Y |
-| Cloud / Diamond | L / R |
-| Return / Backspace | Start / Select |
-| Escape | Menu and boot recovery |
+| Circle / Cloud | A / B |
+| Diamond / Backspace | X / Y |
+| Triangle / Cross | L / R |
+| Escape / Square | Start / Select |
+| Backtick | Menu and boot recovery |
 | Tab | Options |
+
+The mapping in [`config.h`](../config.h) uses raw TCA8418 FIFO key codes
+(without the press/release bit):
+
+```c
+#define RG_GAMEPAD_KBD_MAP { \
+    {RG_KEY_UP,     .src = 0x17}, /* W */ \
+    {RG_KEY_DOWN,   .src = 0x21}, /* S */ \
+    {RG_KEY_LEFT,   .src = 0x20}, /* A */ \
+    {RG_KEY_RIGHT,  .src = 0x22}, /* D */ \
+    {RG_KEY_A,      .src = 0x05}, /* Circle */ \
+    {RG_KEY_B,      .src = 0x06}, /* Cloud */ \
+    {RG_KEY_X,      .src = 0x07}, /* Diamond */ \
+    {RG_KEY_Y,      .src = 0x08}, /* Backspace */ \
+    {RG_KEY_L,      .src = 0x03}, /* Triangle */ \
+    {RG_KEY_R,      .src = 0x04}, /* Cross */ \
+    {RG_KEY_START,  .src = 0x01}, /* ESC */ \
+    {RG_KEY_SELECT, .src = 0x02}, /* Square */ \
+    {RG_KEY_MENU,   .src = 0x0B}, /* Backtick */ \
+    {RG_KEY_OPTION, .src = 0x15}, /* Tab */ \
+}
+```
 
 ## Limitations
 
