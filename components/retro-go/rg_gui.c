@@ -1799,7 +1799,10 @@ static void wifi_toggle_interactive(bool enable, int slot)
             rg_network_wifi_set_config(&config);
         }
         if (!rg_network_wifi_start())
+        {
+            rg_gui_alert(_("Wi-Fi"), _("Unable to start Wi-Fi. Try restarting the device."));
             return;
+        }
     }
     do // Always loop at least once, in case we're in a transition
     {

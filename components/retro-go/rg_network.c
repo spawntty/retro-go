@@ -31,6 +31,7 @@
 static rg_network_state_t network_state = RG_NETWORK_DISABLED;
 static rg_wifi_config_t wifi_config = {0};
 static esp_netif_t *netif_sta, *netif_ap, *netif;
+static bool wifi_initialized, wifi_started, event_loop_owned;
 
 static void network_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -45,14 +46,16 @@ static void network_event_handler(void *arg, esp_event_base_t event_base, int32_
         {
             network_state = RG_NETWORK_CONNECTING;
             RG_LOGI("Connecting to '%s'...", wifi_config.ssid);
-            esp_wifi_connect();
+            if (wifi_started)
+                esp_wifi_connect();
         }
         else if (event_id == WIFI_EVENT_STA_DISCONNECTED)
         {
-            network_state = RG_NETWORK_CONNECTING;
-            RG_LOGW("Got disconnected from AP. Reconnecting...");
+            network_state = wifi_started ? RG_NETWORK_CONNECTING : RG_NETWORK_DISCONNECTED;
+            RG_LOGW("Disconnected from AP.%s", wifi_started ? " Reconnecting..." : "");
             rg_system_event(RG_EVENT_NETWORK_DISCONNECTED, NULL);
-            esp_wifi_connect();
+            if (wifi_started)
+                esp_wifi_connect();
         }
         else if (event_id == WIFI_EVENT_AP_START)
         {
@@ -170,7 +173,11 @@ bool rg_network_wifi_set_config(const rg_wifi_config_t *config)
 bool rg_network_wifi_start(void)
 {
 #ifdef RG_ENABLE_NETWORKING
-    RG_ASSERT(network_state > RG_NETWORK_DISABLED, "Please call rg_network_init() first");
+    if (!wifi_initialized)
+    {
+        RG_LOGE("Wi-Fi unavailable; initialization did not complete.\n");
+        return false;
+    }
     wifi_config_t config = {0};
     esp_err_t err;
 
@@ -190,7 +197,6 @@ bool rg_network_wifi_start(void)
         config.ap.max_connection = 1;
         TRY(esp_wifi_set_mode(WIFI_MODE_AP));
         TRY(esp_wifi_set_config(WIFI_IF_AP, &config));
-        TRY(esp_wifi_start());
     }
     else
     {
@@ -200,10 +206,12 @@ bool rg_network_wifi_start(void)
         config.sta.channel = wifi_config.channel;
         TRY(esp_wifi_set_mode(WIFI_MODE_STA));
         TRY(esp_wifi_set_config(WIFI_IF_STA, &config));
-        TRY(esp_wifi_start());
     }
+    wifi_started = true;
+    TRY(esp_wifi_start());
     return true;
 fail:
+    wifi_started = false;
 #endif
     return false;
 }
@@ -211,7 +219,9 @@ fail:
 void rg_network_wifi_stop(void)
 {
 #ifdef RG_ENABLE_NETWORKING
-    RG_ASSERT(network_state > RG_NETWORK_DISABLED, "Please call rg_network_init() first");
+    if (!wifi_initialized)
+        return;
+    wifi_started = false;
     esp_wifi_stop();
     netif = NULL;
 #endif
@@ -244,11 +254,26 @@ rg_network_t rg_network_get_info(void)
 void rg_network_deinit(void)
 {
 #ifdef RG_ENABLE_NETWORKING
-    esp_wifi_stop();
-    esp_wifi_deinit();
+    wifi_started = false;
+    if (wifi_initialized)
+    {
+        esp_sntp_stop();
+        esp_wifi_stop();
+        esp_wifi_deinit();
+        wifi_initialized = false;
+    }
     esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &network_event_handler);
     esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &network_event_handler);
+    if (netif_sta)
+        esp_netif_destroy_default_wifi(netif_sta);
+    if (netif_ap)
+        esp_netif_destroy_default_wifi(netif_ap);
     netif = netif_ap = netif_sta = NULL;
+    if (event_loop_owned)
+    {
+        esp_event_loop_delete_default();
+        event_loop_owned = false;
+    }
     network_state = RG_NETWORK_DISABLED;
 #endif
 }
@@ -262,7 +287,10 @@ bool rg_network_init(void)
 
     // Init event loop first
     esp_err_t err;
-    TRY(esp_event_loop_create_default());
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+        goto fail;
+    event_loop_owned = err == ESP_OK;
     TRY(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &network_event_handler, NULL));
     TRY(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &network_event_handler, NULL));
 
@@ -270,17 +298,29 @@ bool rg_network_init(void)
     TRY(esp_netif_init());
     netif_sta = esp_netif_create_default_wifi_sta();
     netif_ap = esp_netif_create_default_wifi_ap();
+    if (!netif_sta || !netif_ap)
+        goto fail;
 
     esp_netif_set_hostname(netif_sta, RG_TARGET_NAME);
     esp_netif_set_hostname(netif_ap, RG_TARGET_NAME);
 
     // Wifi may use nvs for calibration data
-    if (nvs_flash_init() != ESP_OK && nvs_flash_erase() == ESP_OK)
-        nvs_flash_init();
+    err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        TRY(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    TRY(err);
 
     // Initialize wifi driver (it won't enable the radio yet)
+#ifdef RG_TARGET_WHY2025
+    extern esp_err_t why2025_wifi_prepare(void);
+    TRY(why2025_wifi_prepare());
+#endif
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     TRY(esp_wifi_init(&cfg));
+    wifi_initialized = true;
     TRY(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
     // Setup SNTP client but don't query it yet
@@ -298,7 +338,7 @@ bool rg_network_init(void)
 
     return true;
 fail:
-    network_state = RG_NETWORK_DISABLED;
+    rg_network_deinit();
 #else
     RG_LOGE("Network was disabled at build time!\n");
 #endif

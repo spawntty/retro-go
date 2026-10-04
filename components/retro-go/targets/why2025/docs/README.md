@@ -10,7 +10,7 @@ Use ESP-IDF 5.5.5 with its ESP32-P4 toolchain and an exported IDF environment.
 From the Retro-Go root:
 
 ```sh
-python rg_tool.py --target why2025 build-img --no-networking
+python rg_tool.py --target why2025 build-img
 ```
 
 The target configuration is regenerated with ESP-IDF 5.5.5: 16 MB flash,
@@ -24,11 +24,15 @@ After changing the target `sdkconfig`, regenerate the per-app configurations:
 
 ```sh
 python rg_tool.py --target why2025 clean
-python rg_tool.py --target why2025 build-img --no-networking
+python rg_tool.py --target why2025 build-img
 ```
 
 Existing per-app `sdkconfig` files take precedence over target defaults, so an
 ordinary incremental build does not apply changes to existing settings.
+
+The launcher includes Wi-Fi by default. For an offline build, clean first and
+add `--no-networking` to the build command. Clean again when changing back.
+The emulator projects keep their existing networking-disabled configuration.
 
 PSRAM is initialized by ESP-IDF and available to the allocator. Do not
 copy BadgeVMS's disabled PSRAM boot initialization: BadgeVMS initializes its own
@@ -161,11 +165,98 @@ The mapping in [`config.h`](../config.h) uses raw TCA8418 FIFO key codes
 }
 ```
 
+## Wi-Fi through the ESP32-C6
+
+The launcher uses ESP-Hosted **2.0.17** and esp_wifi_remote **0.14.4**, matching
+the supplied BadgeVMS companion source and lockfile, on ESP-IDF 5.5.5. The
+target-specific component and `sdkconfig.wifi` are included only for WHY2025
+builds with networking enabled; a shared target dependency lock pins transitive
+dependencies across applications.
+
+The C6 must already run the official badge's ESP-Hosted companion firmware.
+This implementation does **not** flash it. It preserves the companion's
+display/keyboard backlight initialization. UART pins are not used for Wi-Fi.
+
+SDIO uses slot 1, four data lines, at 40 MHz:
+
+| Signal | P4 GPIO |
+| --- | --- |
+| CLK / CMD | 32 / 33 |
+| D0 / D1 / D2 / D3 | 28 / 31 / 30 / 29 |
+| C6 EN (reset) / BOOT | 12 / 13 |
+
+Reset follows BadgeVMS's serial flasher: GPIO12 is pulsed high-low-high, with
+GPIO13 held high for normal boot. This deliberately differs from BadgeVMS's
+Hosted default naming GPIO13 as reset. The official PCB connects this same
+GPIO12 line to **TCA8418 RESET** (M.2 pad 32 → carrier `/C6_CHIP_PU` → U1 pad 20).
+Resetting the companion therefore also erases the keyboard's matrix setup.
+
+The transport handshake runs after storage mounting and **before keyboard
+initialization and recovery-button detection**, matching BadgeVMS's ordering.
+Its result, including failure, is cached; later Wi-Fi initialization cannot pulse
+the shared reset again. A failed/lost transport requires a reboot. The SD card
+remains on slot 0 and its existing pins. End-to-end behavior still needs testing
+on hardware.
+
+Both station and access-point interfaces are enabled. In the launcher's Wi-Fi
+menu, add an SSID/password under the saved networks and select Connect. Enable
+**File server** and open `http://<badge-IP>/` from a computer on the same network.
+The existing access-point option uses SSID/password `retro-go` / `retro-go`.
+Credentials use Retro-Go's existing settings, not BadgeVMS's saved credentials.
+
+The launcher stops its file server and Wi-Fi before unmounting the SD card on
+shutdown or when switching to a game. Bluetooth and netplay are not enabled by
+this change.
+
+### Companion failure handling
+
+`components/why2025_wifi/patch_hosted.py` generates patched copies of four
+upstream host sources in the build directory, leaving managed downloads intact.
+The replacements require the expected 2.0.17 source text and fail configuration
+if it changes. These fixes:
+
+- Limit the initial transport-ready wait to five one-second polls after the
+  reset/boot delay, and return the error instead of aborting inside the Wi-Fi API.
+- Allow only one companion reset per boot, before keyboard configuration;
+  subsequent failed connection attempts return without resetting the keyboard.
+- Preserve the SD card's controller/slot when companion enumeration fails;
+  explicit Hosted teardown releases only slot 1.
+- Suspend the SDIO task on enumeration failure instead of returning from a
+  FreeRTOS task (which would abort).
+
+Failed network initialization cleans up its netifs and event handlers; selecting
+Connect then reports that Wi-Fi could not start. Reboot to retry after a missing
+or incompatible companion. These fixes cover initial connection failure, not
+automatic recovery from every runtime SDIO/controller fault.
+
+### Validation
+
+Build the full image with the command above, then run:
+
+```sh
+python3 tools/tests/test_why2025_wifi.py
+```
+
+The host test compiles production lifecycle functions and generated Hosted
+functions with mocks. It checks missing-companion error propagation and bounded
+waiting, slot-specific teardown, initialization cleanup, reinitialization,
+STA/AP start/stop, caller-owned event loops, and NVS error handling.
+It also executes the production storage/companion/keyboard startup sequence
+with a shared-reset model, checking that the keyboard remains configured after
+both successful and failed companion startup and later connection attempts.
+
+Hardware validation is still required: cold boot and warm launcher return,
+station association/DHCP, saved credentials, AP-mode DHCP, repeated disconnects,
+and large upload/download checksums while accessing the SD card. Also test an
+unavailable companion: the launcher and local files must remain usable. Check
+that backlights survive resets and that switching to a game stops Wi-Fi.
+
 ## Limitations
 
-Battery measurement, brightness control, and ESP32-C6 networking are not
-implemented. The supplied BadgeVMS drivers provide no battery implementation
-or backlight GPIO to reuse. Network update support is disabled.
+Battery measurement and adjustable brightness are not implemented. The supplied
+BadgeVMS drivers provide no battery implementation; its C6 firmware sets fixed
+PWM values on C6 GPIO15 (display) and GPIO10 (keyboard), with no brightness RPC
+implemented here. Network update support remains disabled.
 
 ## Source provenance
 

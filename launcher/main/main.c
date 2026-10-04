@@ -416,6 +416,15 @@ static void try_migrate(void)
 
 void event_handler(int event, void *arg)
 {
+#ifdef RG_ENABLE_NETWORKING
+    if (event == RG_EVENT_SHUTDOWN)
+    {
+        // Stop file transfers before storage is unmounted, and stop the C6 radio
+        // before switching to an emulator that does not initialize networking.
+        webui_stop();
+        rg_network_deinit();
+    }
+#endif
     if (event == RG_EVENT_REDRAW)
     {
         gui_redraw();

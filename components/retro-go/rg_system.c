@@ -461,6 +461,13 @@ rg_app_t *rg_system_init(const rg_config_t *config)
 #endif
 
     rg_storage_init();
+#if defined(RG_TARGET_WHY2025) && defined(RG_ENABLE_NETWORKING)
+    // C6 EN and the TCA8418 RESET share GPIO12. Finish the companion reset
+    // before configuring/polling the keyboard (including recovery-button input).
+    extern esp_err_t why2025_wifi_prepare(void);
+    if (why2025_wifi_prepare() != ESP_OK)
+        RG_LOGW("C6 unavailable; continuing with local input and storage. Reboot to retry Wi-Fi.");
+#endif
     rg_input_init();
 
     // Test for recovery request as early as possible

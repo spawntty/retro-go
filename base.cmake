@@ -1,6 +1,17 @@
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/components")
 
+# Keep the companion dependencies out of other boards and offline builds.
+if(RG_BUILD_TARGET STREQUAL "RG_TARGET_WHY2025" AND RG_ENABLE_NETWORKING)
+    if(NOT DEFINED SDKCONFIG_DEFAULTS AND DEFINED ENV{SDKCONFIG_DEFAULTS})
+        set(SDKCONFIG_DEFAULTS "$ENV{SDKCONFIG_DEFAULTS}")
+    endif()
+    list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/components/retro-go/targets/why2025/sdkconfig.wifi")
+    list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/components/retro-go/targets/why2025/components/why2025_wifi")
+    list(APPEND COMPONENTS why2025_wifi)
+    idf_build_set_property(DEPENDENCIES_LOCK "${CMAKE_CURRENT_LIST_DIR}/components/retro-go/targets/why2025/dependencies.lock")
+endif()
+
 macro(rg_setup_compile_options)
     component_compile_options(
         -D${RG_BUILD_TARGET}=1
